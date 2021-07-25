@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+  <head>
+    {% block head %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>SDG SDMX Global Filter</title>
+    {% endblock %}
+  </head>
+  <body>
+    <h1>SDG SDMX global filter - {% block title %}{% endblock %}</h1>
+    <div id="content">{% block content %}{% endblock %}</div>
+  </body>
+</html>

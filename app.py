@@ -1,8 +1,10 @@
 import os
-from flask import Flask, flash, request, redirect, url_for, send_from_directory
+from flask import Flask, send_from_directory, request, url_for, render_template
 from werkzeug.utils import secure_filename
 import pandas as pd
 from sdmx import model, read_sdmx, to_xml
+from uuid import uuid1
+from pathlib import Path
 
 UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
 ALLOWED_EXTENSIONS = {'xml'}
@@ -14,56 +16,57 @@ def allowed_file(filename):
     return '.' in filename and \
         filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/', methods=['GET', 'POST'])
-def upload_file():
-    if request.method == 'POST':
-        constraints = get_content_constraints()
-        dsd = get_global_dsd()
-        # check if the post request has the file part
-        if 'file' not in request.files:
-            flash('No file part')
-            return redirect(request.url)
-        file = request.files['file']
-        # If the user does not select a file, the browser submits an
-        # empty file without a filename.
-        if file.filename == '':
-            flash('No selected file')
-            return redirect(request.url)
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
-            ret = filter_sdmx(filepath, constraints, dsd)
-            if ret['num_series'] > 0:
-                return redirect(url_for('download_file', name=filename))
-            else:
-                return '''
-                <!doctype html>
-                <title>SDG SDMX global filter</title>
-                <h1>SDG SDMX global filter</h1>
-                <p>Filtered data is empty.</p>
-                '''
+@app.route('/', methods=['GET'])
+def upload_form():
+    return render_template('upload.html')
 
-    return '''
-    <!doctype html>
-    <title>SDG SDMX global filter</title>
-    <h1>SDG SDMX global filter</h1>
-    <form method=post enctype=multipart/form-data>
-      <p>1. Select your national SDMX data file.</p>
-      <input type=file name=file>
-      <p>2. Press "Filter" to get a globally-compatible version.</p>
-      <input type=submit value="Filter">
-    </form>
-    '''
+@app.route('/filter', methods=['POST'])
+def upload_results():
+    constraints = get_content_constraints()
+    dsd = get_global_dsd()
 
-@app.route('/uploads/<name>')
-def download_file(name):
-    return send_from_directory(app.config["UPLOAD_FOLDER"], name)
+    file = request.files['file'] if 'file' in request.files else None
+
+    if file is None or file.filename == '':
+        return render_template('results.html',
+            messages=['File missing.'])
+
+    if not allowed_file(file.filename):
+        return render_template('results.html',
+            messages=['File must be .xml.'])
+
+    subfolder = str(uuid1())
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], subfolder)
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(folder, filename)
+    file.save(filepath)
+    ret = filter_sdmx(filepath, constraints, dsd)
+
+    if ret['num_series'] > 0 and ret['num_removed'] > 0:
+        with open(filepath, 'wb') as f:
+            f.write(to_xml(ret['sdmx']))
+        return render_template('results.html',
+            num_removed=ret['num_removed'],
+            num_total=ret['num_removed'] + ret['num_series'],
+            messages=ret['messages'],
+            download=url_for('download_file', folder=subfolder, name=filename))
+    elif ret['num_removed'] == 0:
+        return render_template('results.html',
+            messages=['The file is already globally-compatible.'])
+    elif ret['num_series'] == 0:
+        return render_template('results.html',
+            messages=['All of the series keys were removed, so there is no output available.'] + ret['messages'])
+
+@app.route('/uploads/<folder>/<name>')
+def download_file(folder, name):
+    return send_from_directory(os.path.join(app.config["UPLOAD_FOLDER"], folder), name)
 
 def filter_sdmx(filepath, constraints, dsd):
     messages = []
     msg = read_sdmx(filepath)
     num_series = 0
+    num_removed = 0
     global_datasets = []
     for dataset in msg.data:
         global_serieses = {}
@@ -73,16 +76,17 @@ def filter_sdmx(filepath, constraints, dsd):
                 global_serieses[series_key] = observations
                 num_series += 1
             else:
-                print('skipping a series')
-                print(series_key)
                 messages = messages + series_messages
+                num_removed += 1
         global_dataset = model.StructureSpecificTimeSeriesDataSet(series=global_serieses)
         global_datasets.append(global_dataset)
     msg.data = global_datasets
+    messages = get_unique_messages(messages)
     return {
         'messages': messages,
         'sdmx': msg,
         'num_series': num_series,
+        'num_removed': num_removed,
     }
 
 def get_series_messages(series_key, constraints, dsd):
@@ -92,14 +96,12 @@ def get_series_messages(series_key, constraints, dsd):
         if dimension.id in series_key.values and dimension.local_representation is not None and dimension.local_representation.enumerated is not None:
             code = series_key.values[dimension.id].value
             if code not in dimension.local_representation.enumerated:
-                messages.append('"{}" is not in the global codelist for "{}".'.format(code, dimension.id))
+                messages.append('In "{}", "{}" is not in the global codelist.'.format(dimension.id, code))
     for attribute in dsd.attributes:
         if attribute.id in series_key.values and attribute.local_representation is not None and attribute.local_representation.enumerated is not None:
             code = series_key.values[attribute.id].value
             if code not in attribute.local_representation.enumerated:
-                messages.append('"{}" is not in the global codelist for "{}".'.format(code, attribute.id))
-
-    print(messages)
+                messages.append('In "{}", "{}" is not in the global codelist.'.format(attribute.id, code))
     return messages
 
 def get_content_constraints():
@@ -111,6 +113,14 @@ def get_global_dsd():
     dsd_path = os.path.join(os.path.dirname(__file__), 'global_dsd.xml')
     msg = read_sdmx(dsd_path)
     return msg.structure[0]
+
+def get_unique_messages(messages):
+    unique = {}
+    for message in messages:
+        unique[message] = True
+    unique = list(unique.keys())
+    unique.sort()
+    return unique
 
 # Remove rows of data that do not comply with the global SDMX content constraints.
 def enforce_global_content_constraints(self, rows, indicator_id):

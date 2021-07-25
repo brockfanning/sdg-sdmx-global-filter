@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Results{% endblock %}
+{% block content %}
+    {% if download %}
+    <div class="download">
+        <a href="{{ download }}">Download filtered SDMX</a>
+    </div>
+    {% endif %}
+    {% if num_removed > 0 %}
+        <p>{{ num_removed }} series keys were removed (out of {{ num_total }}).</p>
+    {% endif %}
+    {% if messages %}
+        <p>Feedback shown below:</p>
+        <ol class="message-list">
+        {% for message in messages %}
+            <li>{{ message }}</li>
+        {% endfor %}
+        </ol>
+    {% endif %}
+{% endblock %}
