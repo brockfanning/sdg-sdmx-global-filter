@@ -1,9 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
     <p>
-    This tool accepts SDG SDMX data and removes each series key that is not
-    compatible with the global DSD and content constraints. To use, drop in
-    your SDMX data (XML) file. Results will be displayed below.
+    This tool accepts Structure-Specific SDMX data that use national SDG DSDs
+    customized in accordance with the global <a href="https://unstats.un.org/sdgs/iaeg-sdgs/sdmx-working-group/">
+    Guidelines on the Customization of the Global SDG DSD</a>. The tool removes
+    data for national indicators and disaggregation codes, and leaves a dataset
+    that is compatible with the global SDG DSD. To use, drop in your SDMX data
+    (XML) file. Results will be displayed below.
     </p>
     <form id="upload-form" action="filter" method="post" enctype="multipart/form-data" class="dropzone"></form>
     <div id="info"></div>
