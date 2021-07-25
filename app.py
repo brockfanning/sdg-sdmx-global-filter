@@ -78,7 +78,7 @@ def filter_sdmx(filepath, constraints, dsd):
             else:
                 messages = messages + series_messages
                 num_removed += 1
-        global_dataset = model.StructureSpecificTimeSeriesDataSet(series=global_serieses)
+        global_dataset = model.StructureSpecificTimeSeriesDataSet(series=global_serieses, structured_by=dsd)
         global_datasets.append(global_dataset)
     msg.data = global_datasets
     messages = get_unique_messages(messages)

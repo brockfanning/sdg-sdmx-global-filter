@@ -6,7 +6,7 @@
         <a href="{{ download }}">Download filtered SDMX</a>
     </div>
     {% endif %}
-    {% if num_removed > 0 %}
+    {% if num_removed and num_removed > 0 %}
         <p>{{ num_removed }} series keys were removed (out of {{ num_total }}).</p>
     {% endif %}
     {% if messages %}
