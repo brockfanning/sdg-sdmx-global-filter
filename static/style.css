@@ -1,8 +1,6 @@
-label {
-    display: block;
+#info, #summary, #download, #messages {
     margin-bottom: 20px;
-    margin-top: 20px;
 }
-input {
-    margin-left: 20px;
+#messages li {
+    margin-bottom: 0.3em;
 }

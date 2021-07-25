@@ -1,14 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Upload{% endblock %}
 {% block content %}
-    <form action="filter" method="post" enctype="multipart/form-data">
-        <div>
-            <label for="upload-field">1. Select your national SDMX data file (.xml).</label>
-            <input id="upload-field" type="file" name="file">
-        </div>
-        <div>
-            <label for="filter-button">2. Press "Filter" to get a globally-compatible version.</label>
-            <input id="filter-button" type="submit" value="Filter">
-        </div>
-    </form>
+    <p>
+    This tool accepts SDG SDMX data and removes each series key that is not
+    compatible with the global DSD and content constraints. To use, drop in
+    your SDMX data (XML) file. Results will be displayed below.
+    </p>
+    <form id="upload-form" action="filter" method="post" enctype="multipart/form-data" class="dropzone"></form>
+    <div id="info"></div>
+    <div id="download"></div>
+    <div id="summary"></div>
+    <div id="messages"></div>
 {% endblock %}

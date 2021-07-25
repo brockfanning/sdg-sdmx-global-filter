@@ -1,5 +1,5 @@
 import os
-from flask import Flask, send_from_directory, request, url_for, render_template
+from flask import Flask, send_from_directory, request, render_template
 from werkzeug.utils import secure_filename
 import pandas as pd
 from sdmx import model, read_sdmx, to_xml
@@ -28,12 +28,10 @@ def upload_results():
     file = request.files['file'] if 'file' in request.files else None
 
     if file is None or file.filename == '':
-        return render_template('results.html',
-            messages=['File missing.'])
+        return {'warning': 'File is missing'}
 
     if not allowed_file(file.filename):
-        return render_template('results.html',
-            messages=['File must be .xml.'])
+        return {'warning': 'Only XML files are allowed.'}
 
     subfolder = str(uuid1())
     folder = os.path.join(app.config['UPLOAD_FOLDER'], subfolder)
@@ -43,20 +41,24 @@ def upload_results():
     file.save(filepath)
     ret = filter_sdmx(filepath, constraints, dsd)
 
+    response = {
+        'removed': ret['num_removed'],
+        'total': ret['num_total'],
+        'messages': ret['messages'],
+        'info': None,
+        'download': None,
+    }
+
     if ret['num_series'] > 0 and ret['num_removed'] > 0:
         with open(filepath, 'wb') as f:
             f.write(to_xml(ret['sdmx']))
-        return render_template('results.html',
-            num_removed=ret['num_removed'],
-            num_total=ret['num_removed'] + ret['num_series'],
-            messages=ret['messages'],
-            download=url_for('download_file', folder=subfolder, name=filename))
+        response['download'] = 'uploads/' + subfolder + '/' + filename
     elif ret['num_removed'] == 0:
-        return render_template('results.html',
-            messages=['The file is already globally-compatible.'])
+        response['info'] = 'The file "{}" is already globally compatible. No changes were needed.'.format(filename)
     elif ret['num_series'] == 0:
-        return render_template('results.html',
-            messages=['All of the series keys were removed, so there is no output available.'] + ret['messages'])
+        response['info'] = 'When filtering the file "{}" all of the series keys were removed, and there is no data left to output.'.format(filename)
+
+    return response
 
 @app.route('/uploads/<folder>/<name>')
 def download_file(folder, name):
@@ -87,6 +89,7 @@ def filter_sdmx(filepath, constraints, dsd):
         'sdmx': msg,
         'num_series': num_series,
         'num_removed': num_removed,
+        'num_total': num_series + num_removed,
     }
 
 def get_series_messages(series_key, observations, constraints, dsd):
