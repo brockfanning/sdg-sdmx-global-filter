@@ -1,0 +1,5 @@
+#git+git://github.com/dougmet/yamlmd
+git+git://github.com/brockfanning/sdmx@support-falsy-obs-value
+#git+git://github.com/brockfanning/sdg-build-1@sdmx-global-plus-output-by-goal
+pandas
+Flask
