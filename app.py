@@ -42,17 +42,23 @@ def upload_results():
     ret = filter_sdmx(filepath, constraints, dsd)
 
     response = {
+        'series': ret['num_series'],
         'removed': ret['num_removed'],
         'total': ret['num_total'],
-        'messages': ret['messages'],
+        'dsd_violations': ret['num_dsd_violations'],
+        'content_violations': ret['num_content_violations'],
+        'dsd_messages': ret['dsd_messages'],
+        'content_messages': ret['content_messages'],
         'info': None,
         'download': None,
     }
 
-    if ret['num_series'] > 0 and ret['num_removed'] > 0:
+    if ret['num_series'] > 0 and ret['num_removed'] > 0 and ret['num_content_violations'] == 0:
         with open(filepath, 'wb') as f:
             f.write(to_xml(ret['sdmx']))
         response['download'] = 'uploads/' + subfolder + '/' + filename
+    elif ret['num_content_violations'] > 0:
+        response['info'] = 'The file "{}" could not be filtered because of content constraint violations.'.format(filename)
     elif ret['num_removed'] == 0:
         response['info'] = 'The file "{}" is already globally compatible. No changes were needed.'.format(filename)
     elif ret['num_series'] == 0:
@@ -65,41 +71,60 @@ def download_file(folder, name):
     return send_from_directory(os.path.join(app.config["UPLOAD_FOLDER"], folder), name)
 
 def filter_sdmx(filepath, constraints, dsd):
-    messages = []
+    all_dsd_messages = []
+    all_content_messages = []
     msg = read_sdmx(filepath)
     num_series = 0
-    num_removed = 0
+    num_dsd_violations = 0
+    num_content_violations = 0
+    num_total = 0
+
+    # First filter out all DSD violations.
     global_datasets = []
     for dataset in msg.data:
         global_serieses = {}
         for series_key, observations in dataset.series.items():
-            series_messages = get_series_messages(series_key, observations, constraints, dsd)
-            if len(series_messages) == 0:
+            dsd_messages = get_dsd_messages(series_key, dsd)
+            all_dsd_messages = all_dsd_messages + dsd_messages
+            num_total += 1
+            if len(dsd_messages) == 0:
                 global_serieses[series_key] = observations
                 num_series += 1
             else:
-                messages = messages + series_messages
-                num_removed += 1
+                num_dsd_violations += 1
         global_dataset = model.StructureSpecificTimeSeriesDataSet(series=global_serieses, structured_by=dsd)
         global_datasets.append(global_dataset)
     msg.data = global_datasets
-    messages = get_unique_messages(messages)
+    all_dsd_messages = get_unique_messages(all_dsd_messages)
+
+    # Next check for content violations.
+    for dataset in msg.data:
+        for series_key, observations in dataset.series.items():
+            content_messages = get_content_messages(series_key, observations, constraints)
+            all_content_messages = all_content_messages + content_messages
+            if len(content_messages) > 0:
+                num_content_violations += 1
+    all_content_messages = get_unique_messages(all_content_messages)
+
     return {
-        'messages': messages,
+        'dsd_messages': all_dsd_messages,
+        'content_messages': all_content_messages,
         'sdmx': msg,
         'num_series': num_series,
-        'num_removed': num_removed,
-        'num_total': num_series + num_removed,
+        'num_dsd_violations': num_dsd_violations,
+        'num_content_violations': num_content_violations,
+        'num_total': num_total,
+        'num_removed': num_total - num_series,
     }
 
-def get_series_messages(series_key, observations, constraints, dsd):
+def get_dsd_messages(series_key, dsd):
     messages = []
-    # First look for compatibility with the DSD.
+
     for dimension in dsd.dimensions:
         if dimension.id in series_key.values and dimension.local_representation is not None and dimension.local_representation.enumerated is not None:
             code = series_key.values[dimension.id].value
             if code not in dimension.local_representation.enumerated:
-                messages.append('Codelist: In "{}", "{}" is not in the global codelist.'.format(
+                messages.append('In "{}", "{}" is not in the global codelist.'.format(
                     dimension.id,
                     code,
                 ))
@@ -107,12 +132,16 @@ def get_series_messages(series_key, observations, constraints, dsd):
         if attribute.id in series_key.values and attribute.local_representation is not None and attribute.local_representation.enumerated is not None:
             code = series_key.values[attribute.id].value
             if code not in attribute.local_representation.enumerated:
-                messages.append('Codelist: In "{}", "{}" is not in the global codelist.'.format(
+                messages.append('In "{}", "{}" is not in the global codelist.'.format(
                     attribute.id,
                     code,
                 ))
 
-    # Now look for compatibility with content constraints.
+    return messages
+
+def get_content_messages(series_key, observations, constraints):
+    messages = []
+
     series_code = series_key.values['SERIES'].value
     if series_code in constraints:
         for concept in constraints[series_code]:
@@ -125,20 +154,20 @@ def get_series_messages(series_key, observations, constraints, dsd):
                 # Check the first observation of attributes.
                 attrib_key = observations[0].dimension
                 if concept not in attrib_key.values:
-                    messages.append('Constraints: In series "{}" the concept "{}" is missing. Allowed values are: {}'.format(
+                    messages.append('In series "{}" the concept "{}" is missing. Allowed values are: {}'.format(
                         series_code,
                         concept,
                         ', '.join(allowed_values),
                     ))
                 elif attrib_key.values[concept].value not in allowed_values:
-                    messages.append('Constraints: In series "{}" the attribute "{}" has a disallowed value "{}". Allowed values are: {}'.format(
+                    messages.append('In series "{}" the attribute "{}" has a disallowed value "{}". Allowed values are: {}'.format(
                         series_code,
                         concept,
                         attrib_key.values[concept].value,
                         ', '.join(allowed_values),
                     ))
             elif series_key.values[concept].value not in allowed_values:
-                messages.append('Constraints: In series "{}" the dimension "{}" has a disallowed value "{}". Allowed values are: {}'.format(
+                messages.append('In series "{}" the dimension "{}" has a disallowed value "{}". Allowed values are: {}'.format(
                     series_code,
                     concept,
                     series_key.values[concept].value,
