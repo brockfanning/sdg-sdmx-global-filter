@@ -4,3 +4,7 @@
 #messages li {
     margin-bottom: 0.3em;
 }
+body {
+    padding: 50px;
+    color: black;
+}
